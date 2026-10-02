@@ -1,3 +1,4 @@
+use crate::observer::origin::Source;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::io;
@@ -24,8 +25,12 @@ pub enum Mode {
         #[arg(long)]
         dashboard_db: Option<PathBuf>,
 
+        /// Observer connection label (overrides MCP_OBSERVER_SOURCE)
+        #[arg(long, value_name = "SOURCE")]
+        observer_source: Option<String>,
+
         /// Run without the MCP observer dashboard
-        #[arg(long, conflicts_with_all = ["dashboard_port", "dashboard_db"])]
+        #[arg(long, conflicts_with_all = ["dashboard_port", "dashboard_db", "observer_source"])]
         no_dashboard: bool,
     },
 }
@@ -35,6 +40,7 @@ pub fn launch(mode: Mode) -> io::Result<()> {
         env_file,
         dashboard_port,
         dashboard_db,
+        observer_source,
         no_dashboard,
     } = mode;
     let executable = std::env::current_exe()?;
@@ -50,7 +56,12 @@ pub fn launch(mode: Mode) -> io::Result<()> {
     } else {
         settings.database_path(dashboard_db, &file)?
     };
-    let mut command = settings.command(&executable, &file, port, database)?;
+    let source = if no_dashboard {
+        None
+    } else {
+        Some(settings.observer_source(observer_source.as_deref())?)
+    };
+    let mut command = settings.command(&executable, &file, port, database, source)?;
     let error = command.exec();
     Err(io::Error::new(
         error.kind(),
@@ -133,12 +144,24 @@ impl Settings {
         }))
     }
 
+    fn observer_source(&self, cli: Option<&str>) -> io::Result<Source> {
+        if let Some(value) = cli {
+            return crate::observer_config::parse_source(value);
+        }
+        let name = "MCP_OBSERVER_SOURCE";
+        if !self.inherited.contains_key(OsStr::new(name)) && !self.file.contains_key(name) {
+            return Ok(Source::Unknown);
+        }
+        crate::observer_config::parse_source(&self.value(&[name])?)
+    }
+
     fn command(
         &self,
         executable: &Path,
         file: &Path,
         dashboard_port: Option<u16>,
         database: Option<PathBuf>,
+        source: Option<Source>,
     ) -> io::Result<Command> {
         let api_key = self.value(&["CONTROL_PLANE_API_KEY", "OPENAI_API_KEY"])?;
         let tunnel_id = self.value(&["CONTROL_PLANE_TUNNEL_ID", "TUNNEL_ID"])?;
@@ -166,6 +189,10 @@ impl Settings {
         command.env("CONTROL_PLANE_API_KEY", api_key);
         command.env("CONTROL_PLANE_TUNNEL_ID", tunnel_id);
         command.env("WORKSPACE_ROOT", root);
+        command.env("FILE_SYSTEM_MCP_TUNNEL_LAUNCH", "1");
+        if let Some(source) = source {
+            command.env("MCP_OBSERVER_SOURCE", source.as_str());
+        }
         if let Some(path) = database {
             command.env("MCP_OBSERVER_DB", path);
         }

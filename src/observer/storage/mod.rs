@@ -1,4 +1,5 @@
 use super::metrics::Outcome;
+use super::origin::Origin;
 use rusqlite::{Connection, OpenFlags};
 use std::fs::File;
 use std::io;
@@ -28,6 +29,8 @@ pub struct CallRecord {
     pub duration_ms: f64,
     pub request_bytes: u64,
     pub response_bytes: u64,
+    pub origin: Origin,
+    pub session_id: u64,
 }
 
 #[derive(Default)]
@@ -44,6 +47,11 @@ pub struct ToolAggregate {
     pub last_called_at_ms: u64,
 }
 
+pub struct OriginAggregate {
+    pub origin: Origin,
+    pub totals: Aggregate,
+}
+
 pub struct MinuteAggregate {
     pub minute_start_ms: u64,
     pub calls: u64,
@@ -57,7 +65,9 @@ pub struct History {
     pub request_bytes: u64,
     pub response_bytes: u64,
     pub last_sequence: u64,
+    pub last_session_id: u64,
     pub tools: Vec<ToolAggregate>,
+    pub origins: Vec<OriginAggregate>,
     pub recent_calls: Vec<CallRecord>,
     pub minutes: Vec<MinuteAggregate>,
 }
@@ -118,3 +128,6 @@ mod tests;
 
 #[cfg(test)]
 mod migration_tests;
+
+#[cfg(test)]
+mod origin_tests;

@@ -54,6 +54,7 @@ impl Fixture {
         command.env("CAPTURE_ARGS", self.capture("args"));
         command.env("CAPTURE_ENV", self.capture("env"));
         command.env("CAPTURE_MCP", self.capture("mcp"));
+        command.env("CAPTURE_SOURCE", self.capture("source"));
         command.env("MCP_DASHBOARD_PORT", "0");
         command.current_dir(self.temporary.path());
         command
@@ -73,6 +74,7 @@ fn write_fake_client(directory: &Path) {
     fs::write(&client, r#"#!/bin/sh
 printf '%s\n' "$@" > "$CAPTURE_ARGS"
 printf '%s\n' "$CONTROL_PLANE_API_KEY" "$CONTROL_PLANE_TUNNEL_ID" "$WORKSPACE_ROOT" > "$CAPTURE_ENV"
+printf '%s\n' "$MCP_OBSERVER_SOURCE" "$FILE_SYSTEM_MCP_TUNNEL_LAUNCH" > "$CAPTURE_SOURCE"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --mcp.command) mcp_command=$2; shift 2 ;;
@@ -91,6 +93,49 @@ fn assert_success(output: &Output) {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn observer_source_uses_cli_then_shell_then_file_and_marks_tunnel_context() {
+    let fixture = Fixture::new();
+    fixture.defaults();
+    let env_file = fixture.project.join(".env");
+    let mut config = fs::read_to_string(&env_file).unwrap();
+    config.push_str("MCP_OBSERVER_SOURCE=chatgpt_work\n");
+    fixture.configure(&config);
+    assert_success(&fixture.command().output().unwrap());
+    assert_eq!(fixture.captured("source"), "chatgpt_work\n1\n");
+    assert_success(
+        &fixture
+            .command()
+            .env("MCP_OBSERVER_SOURCE", "codex_cloud")
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(fixture.captured("source"), "codex_cloud\n1\n");
+    assert_success(
+        &fixture
+            .command()
+            .env("MCP_OBSERVER_SOURCE", "codex_cloud")
+            .args(["--observer-source", "openai_dot"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(fixture.captured("source"), "openai_dot\n1\n");
+}
+
+#[test]
+fn invalid_tunnel_source_fails_without_echoing_its_value_or_starting_client() {
+    let fixture = Fixture::new();
+    fixture.defaults();
+    let output = fixture
+        .command()
+        .env("MCP_OBSERVER_SOURCE", "private-source-sentinel")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("private-source-sentinel"));
+    assert!(!fixture.capture("args").exists());
 }
 
 fn workspace_info(fixture: &Fixture) -> Value {

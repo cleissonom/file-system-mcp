@@ -39,6 +39,8 @@ jobs:
       - run: cargo build --release --locked
       - run: node --check observer-ui/app.js
       - run: node --check observer-ui/charts.js
+      - run: node --check observer-ui/activity.js
+      - run: node --test tests/observer_ui.test.mjs
 
   publication:
     name: Private artifacts and secrets

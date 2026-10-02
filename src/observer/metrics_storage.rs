@@ -1,6 +1,6 @@
 use super::{MinuteBucket, RecentCall, State, Totals};
 use crate::observer::storage::{
-    Aggregate, CallRecord, History, MinuteAggregate, Store, ToolAggregate,
+    Aggregate, CallRecord, History, MinuteAggregate, OriginAggregate, Store, ToolAggregate,
 };
 use serde_json::{Value, json};
 use std::io::Write;
@@ -56,23 +56,36 @@ impl Persistence {
 }
 
 impl State {
-    pub(super) fn restore(history: History) -> Self {
+    pub(super) fn restore(history: History) -> io::Result<Self> {
         let mut state = Self::new();
+        state.session_id = history
+            .last_session_id
+            .checked_add(1)
+            .filter(|value| i64::try_from(*value).is_ok())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Observer server run ID is exhausted",
+                )
+            })?;
         state.last_sequence = history.last_sequence;
         state.totals = history.totals.into();
         state.request_bytes = history.request_bytes;
         state.response_bytes = history.response_bytes;
         state.restore_tools(history.tools);
+        state.restore_origins(history.origins);
         for call in history.recent_calls {
             let tool = state.normalize_tool(&call.tool);
-            state.recent.push_back(RecentCall::restore(&call, tool));
+            state
+                .recent
+                .push_back(RecentCall::restore(&call, tool, state.capability(tool)));
         }
         state.minutes = history
             .minutes
             .into_iter()
             .map(|minute| (minute.minute_start_ms, minute.into()))
             .collect();
-        state
+        Ok(state)
     }
 
     fn restore_tools(&mut self, tools: Vec<ToolAggregate>) {
@@ -88,6 +101,15 @@ impl State {
             );
         }
     }
+
+    fn restore_origins(&mut self, origins: Vec<OriginAggregate>) {
+        for aggregate in origins {
+            self.origins
+                .entry(aggregate.origin)
+                .or_default()
+                .add(aggregate.totals);
+        }
+    }
 }
 
 impl From<MinuteAggregate> for MinuteBucket {
@@ -101,11 +123,14 @@ impl From<MinuteAggregate> for MinuteBucket {
 }
 
 impl RecentCall {
-    pub(super) fn restore(call: &CallRecord, tool: &'static str) -> Self {
+    pub(super) fn restore(call: &CallRecord, tool: &'static str, capability: &'static str) -> Self {
         Self {
             sequence: call.sequence,
             started_at_ms: call.started_at_ms,
             tool,
+            origin: call.origin,
+            session_id: call.session_id,
+            capability,
             outcome: call.outcome,
             duration_ms: call.duration_ms,
             request_bytes: call.request_bytes,

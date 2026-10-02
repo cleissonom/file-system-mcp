@@ -71,9 +71,11 @@ Writes require an explicit root. Text edits support expected SHA-256 hashes to d
 
 ## Observer and local data
 
-The dashboard shows tool calls, outcomes, latency, bytes, active calls, and recent activity. Completed-call metadata is saved to `.data/observer.sqlite3` beside the project and restored on restart. Startup initializes embedded sequential SQL migrations automatically.
+The dashboard shows tool calls, outcomes, latency, bytes, all in-flight requests, source labels with attribution evidence, anonymous server runs, and recent activity. Uptime and active elapsed time update every second between two-second snapshots, freezing when paused or disconnected until a fresh snapshot succeeds. Completed-call metadata is saved to `.data/observer.sqlite3` beside the project and restored on restart. Startup initializes embedded sequential SQL migrations automatically.
 
-Arguments, returned content, error messages, filenames, workspace paths, raw request IDs, environment values, and credentials are not stored or exported. The database must remain outside the workspace. Views retain up to 1,000 recent calls and 60 chart minutes; the database retains all saved metadata and grows with usage. The observer binds only to local IPv4 loopback and has no login. See [observer and storage](docs/OBSERVER.md) for settings, backups, and failure behavior.
+Set `--observer-source codex` with `--dashboard`, or `MCP_OBSERVER_SOURCE`, to label a dedicated connection; `tunnel --observer-source chatgpt_work` labels a tunnel launch. The default is `unknown`. Labels are unverified attribution, not authenticated caller identity. ChatGPT does not automatically provide the custom per-call source tag described in the [observer guide](docs/OBSERVER.md#source-labels-and-server-runs).
+
+Arguments, returned content, error messages, filenames, workspace paths, raw request IDs, raw client/identity metadata, raw environment values, and credentials are not stored or exported. Fixed typed origin fields and an anonymous run ID are allowed metadata. The database must remain outside the workspace. Security counters cover at most 1,000 retained completed calls, while origin totals cover saved history. Chart views cover 60 minutes; the database grows with usage. Each dashboard observes one process and its database; concurrent processes need separate databases and ports. The observer binds only to local IPv4 loopback and has no login. See [observer and storage](docs/OBSERVER.md) for settings, backups, and failure behavior.
 
 ## Development and publication
 
@@ -86,6 +88,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --release --locked
 node --check observer-ui/app.js
 node --check observer-ui/charts.js
+node --check observer-ui/activity.js
+node --test tests/observer_ui.test.mjs
 ```
 
 Tests use temporary data, synthetic credentials, and a fake tunnel client. They run headlessly without a real tunnel or API key after dependencies are available.

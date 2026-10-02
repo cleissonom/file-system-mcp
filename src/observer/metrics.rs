@@ -8,7 +8,10 @@ use std::{io, path::Path};
 #[path = "metrics_storage.rs"]
 mod metrics_storage;
 
-use super::storage::CallRecord;
+#[path = "origin_metrics.rs"]
+mod origin_metrics;
+
+use super::{origin::Origin, storage::CallRecord};
 use metrics_storage::Persistence;
 
 const RECENT_LIMIT: usize = 1_000;
@@ -57,7 +60,11 @@ struct ActiveCall {
     sequence: u64,
     started_at_ms: u64,
     tool: &'static str,
+    origin: Origin,
+    session_id: u64,
+    capability: &'static str,
     #[serde(skip)]
+    started: Instant,
     request_bytes: u64,
 }
 
@@ -66,6 +73,9 @@ struct RecentCall {
     sequence: u64,
     started_at_ms: u64,
     tool: &'static str,
+    origin: Origin,
+    session_id: u64,
+    capability: &'static str,
     outcome: Outcome,
     duration_ms: f64,
     request_bytes: u64,
@@ -82,10 +92,12 @@ struct MinuteBucket {
 #[derive(Clone)]
 struct State {
     last_sequence: u64,
+    session_id: u64,
     totals: Totals,
     request_bytes: u64,
     response_bytes: u64,
     tools: BTreeMap<&'static str, ToolStats>,
+    origins: BTreeMap<Origin, Totals>,
     active: BTreeMap<u64, ActiveCall>,
     recent: VecDeque<RecentCall>,
     minutes: BTreeMap<u64, MinuteBucket>,
@@ -94,7 +106,7 @@ struct State {
 impl Observer {
     pub fn persistent(path: &Path) -> io::Result<Self> {
         let (storage, history) = Persistence::open(path, unix_ms())?;
-        Ok(Self::from_state(State::restore(history), Some(storage)))
+        Ok(Self::from_state(State::restore(history)?, Some(storage)))
     }
 
     #[cfg(test)]
@@ -112,27 +124,16 @@ impl Observer {
         }
     }
 
+    #[cfg(test)]
     pub fn begin(&self, name: &str, request_bytes: u64) -> CallToken {
+        self.begin_with_origin(name, request_bytes, Origin::default())
+    }
+
+    pub fn begin_with_origin(&self, name: &str, request_bytes: u64, origin: Origin) -> CallToken {
         let started = Instant::now();
-        let timestamp = unix_ms();
-        let mut state = self.state();
-        let tool = state.normalize_tool(name);
-        state.totals.calls = state.totals.calls.saturating_add(1);
-        state.last_sequence = state.last_sequence.saturating_add(1);
-        let sequence = state.last_sequence;
-        state.request_bytes = state.request_bytes.saturating_add(request_bytes);
-        let stats = state.tools.get_mut(tool).expect("Fixed tool catalog");
-        stats.totals.calls = stats.totals.calls.saturating_add(1);
-        stats.last_called_at_ms = Some(timestamp);
-        state.active.insert(
-            sequence,
-            ActiveCall {
-                sequence,
-                started_at_ms: timestamp,
-                tool,
-                request_bytes,
-            },
-        );
+        let sequence = self
+            .state()
+            .begin_call(name, request_bytes, origin, started, unix_ms());
         CallToken {
             sequence,
             started,
@@ -184,10 +185,12 @@ impl State {
         tools.insert("unknown_tool", ToolStats::new(false));
         Self {
             last_sequence: 0,
+            session_id: 1,
             totals: Totals::default(),
             request_bytes: 0,
             response_bytes: 0,
             tools,
+            origins: BTreeMap::new(),
             active: BTreeMap::new(),
             recent: VecDeque::new(),
             minutes: BTreeMap::new(),
@@ -219,6 +222,8 @@ impl State {
             duration_ms,
             request_bytes: active.request_bytes,
             response_bytes,
+            origin: active.origin,
+            session_id: active.session_id,
         };
         self.record_completed(&record, active.tool);
         Some(record)
@@ -226,6 +231,10 @@ impl State {
 
     fn record_completed(&mut self, record: &CallRecord, tool: &'static str) {
         self.totals.complete(record.outcome, record.duration_ms);
+        self.origins
+            .entry(record.origin)
+            .or_default()
+            .complete(record.outcome, record.duration_ms);
         self.tools
             .get_mut(tool)
             .expect("Fixed tool catalog")
@@ -236,7 +245,8 @@ impl State {
         if self.recent.len() == RECENT_LIMIT {
             self.recent.pop_front();
         }
-        self.recent.push_back(RecentCall::restore(record, tool));
+        self.recent
+            .push_back(RecentCall::restore(record, tool, self.capability(tool)));
     }
 
     fn record_minute(&mut self, outcome: Outcome, duration_ms: f64, now: u64) {
@@ -255,7 +265,7 @@ impl State {
     fn snapshot(&self, started_at_ms: u64, uptime_ms: u128, now: u64) -> Value {
         let completed = self.totals.successes + self.totals.errors;
         json!({
-            "server": { "name": "file-system-mcp", "started_at_ms": started_at_ms, "uptime_ms": uptime_ms, "pid": std::process::id() },
+            "server": { "name": "file-system-mcp", "started_at_ms": started_at_ms, "uptime_ms": uptime_ms, "pid": std::process::id(), "session_id": self.session_id },
             "summary": {
                 "total_calls": self.totals.calls,
                 "successes": self.totals.successes,
@@ -269,9 +279,10 @@ impl State {
             },
             "retention": { "recent_call_limit": RECENT_LIMIT, "chart_minutes": CHART_MINUTES, "recent_call_count": self.recent.len() },
             "tools": self.tool_snapshot(),
+            "origins": self.origin_snapshot(),
             "recent_calls": self.recent.iter().rev().collect::<Vec<_>>(),
             "timeline": self.timeline(now),
-            "active_calls": self.active.values().collect::<Vec<_>>()
+            "active_calls": self.active_snapshot_at(Instant::now())
         })
     }
 
@@ -356,3 +367,7 @@ mod metrics_tests;
 #[cfg(test)]
 #[path = "persistence_tests.rs"]
 mod persistence_tests;
+
+#[cfg(test)]
+#[path = "origin_metrics_tests.rs"]
+mod origin_metrics_tests;

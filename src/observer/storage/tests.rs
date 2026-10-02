@@ -13,6 +13,8 @@ fn record(sequence: u64) -> CallRecord {
         duration_ms: 12.5,
         request_bytes: 10,
         response_bytes: 20,
+        origin: Origin::default(),
+        session_id: 0,
     }
 }
 

@@ -170,6 +170,10 @@ fn route(request: &RequestHead, observer: &Observer) -> Reply {
             "text/javascript; charset=utf-8",
             include_bytes!("../../observer-ui/charts.js").as_slice(),
         ),
+        "/activity.js" => Reply::ok(
+            "text/javascript; charset=utf-8",
+            include_bytes!("../../observer-ui/activity.js").as_slice(),
+        ),
         "/api/snapshot" | "/api/export" => {
             let mut reply = Reply::ok(
                 "application/json; charset=utf-8",

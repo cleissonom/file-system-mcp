@@ -1,37 +1,11 @@
 import { renderVolumeChart, renderOutcomes } from './charts.js';
+import { clockCanAdvance, createClock, filterCalls, formatBytes, formatDuration, formatUptime, renderInFlight, renderOrigins, renderRecentCalls, renderSecurityWindow, sessionLabel, tickClock } from './activity.js';
+export { filterCalls, formatBytes, formatDuration, formatUptime } from './activity.js';
 
-const state = { snapshot: null, paused: false, loading: false, connected: false, timer: null };
-const outcomeLabels = { success: 'Success', tool_error: 'Tool error', protocol_error: 'Protocol error' };
+const state = { snapshot: null, paused: false, loading: false, connected: false, timer: null,
+  clock: null, clockReady: false, clockGeneration: -1, refreshGeneration: 0 };
 const element = id => document.getElementById(id);
 const setText = (id, value) => { element(id).textContent = value; };
-
-export function formatDuration(milliseconds) {
-  if (milliseconds >= 1000) return `${(milliseconds / 1000).toFixed(2)} s`;
-  return `${milliseconds < 10 ? milliseconds.toFixed(1) : Math.round(milliseconds)} ms`;
-}
-
-export function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-export function formatUptime(milliseconds) {
-  const seconds = Math.floor(milliseconds / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ${minutes % 60}m`;
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-}
-
-export function filterCalls(calls, query, tool, status) {
-  const normalized = query.trim().toLowerCase();
-  return calls.filter(call => (!tool || call.tool === tool)
-    && (!status || (status === 'error' ? call.outcome !== 'success' : call.outcome === status))
-    && (!normalized || `${call.tool} ${outcomeLabels[call.outcome] || call.outcome}`.toLowerCase().includes(normalized)));
-}
 
 function number(value) { return value.toLocaleString(); }
 function clock(milliseconds) { return new Date(milliseconds).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
@@ -66,15 +40,6 @@ function node(tag, className, content) {
   return value;
 }
 
-function emptyRow(columns, title, description) {
-  const row = node('tr');
-  const cell = node('td', 'table-empty');
-  cell.colSpan = columns;
-  cell.append(node('strong', 'empty-title', title), node('span', '', description));
-  row.append(cell);
-  return row;
-}
-
 function connectionState() {
   const status = state.paused ? 'paused' : state.connected ? 'connected' : state.snapshot ? 'disconnected' : 'loading';
   element('connection-badge').className = `connection-badge ${status}`;
@@ -84,6 +49,7 @@ function connectionState() {
   element('pause-button').setAttribute('title', `${state.paused ? 'Resume' : 'Pause'} automatic refresh`);
   element('pause-icon').firstElementChild.setAttribute('d', state.paused ? 'm7 4 8 6-8 6V4Z' : 'M7 5v10M13 5v10');
   setText('refresh-status', state.paused ? 'Automatic refresh paused' : 'Updates every 2 seconds');
+  renderClock();
 }
 
 function notice(message, isError = false) {
@@ -96,8 +62,9 @@ function notice(message, isError = false) {
 function renderMetrics(snapshot) {
   const { summary, server, retention } = snapshot;
   setText('server-name', server.name);
-  setText('server-uptime', formatUptime(server.uptime_ms));
   setText('server-pid', server.pid);
+  setText('process-session', sessionLabel(server.session_id));
+  setText('health-session', sessionLabel(server.session_id));
   setText('total-calls', number(summary.total_calls));
   setText('success-rate', formatSuccessRate(summary.success_rate));
   setText('success-foot', `${number(summary.successes)} successful · ${number(summary.errors)} failed`);
@@ -109,7 +76,7 @@ function renderMetrics(snapshot) {
 }
 
 function renderTraffic(snapshot) {
-  const { summary, active_calls } = snapshot;
+  const { summary } = snapshot;
   setText('request-bytes', formatBytes(summary.request_bytes));
   setText('response-bytes', formatBytes(summary.response_bytes));
   setText('outcome-total', number(summary.successes + summary.errors));
@@ -117,17 +84,6 @@ function renderTraffic(snapshot) {
   setText('outcome-failures', number(summary.errors));
   renderOutcomes(summary);
   renderVolumeChart(element('volume-chart'), element('chart-detail'), snapshot.timeline);
-  const rows = active_calls.slice(0, 3).map(call => activeRow(call, snapshot.server));
-  if (!rows.length) rows.push(node('span', '', 'No calls in flight'));
-  if (active_calls.length > 3) rows.push(node('span', '', `+ ${active_calls.length - 3} more active calls`));
-  element('active-tools').replaceChildren(...rows);
-}
-
-function activeRow(call, server) {
-  const row = node('div', 'active-item');
-  const now = server.started_at_ms + server.uptime_ms;
-  row.append(node('span', '', call.tool), node('span', '', formatDuration(Math.max(0, now - call.started_at_ms))));
-  return row;
 }
 
 function toolButton(tool) {
@@ -179,36 +135,19 @@ function renderTools(tools) {
   if (activeTool) [...element('tool-rows').querySelectorAll('button')].find(button => button.dataset.tool === activeTool)?.focus({ preventScroll: true });
 }
 
-function callRow(call) {
-  const row = node('tr');
-  const outcome = node('td');
-  outcome.append(node('span', `call-outcome${call.outcome === 'success' ? '' : ' failure'}`, outcomeLabels[call.outcome] || 'Unknown outcome'));
-  const tool = node('td');
-  tool.append(node('span', 'call-tool', call.tool), node('span', 'call-sequence', `#${call.sequence}`));
-  const time = node('td', 'call-time', clock(call.started_at_ms));
-  time.title = new Date(call.started_at_ms).toLocaleString();
-  row.append(outcome, tool, time, node('td', 'numeric', formatDuration(call.duration_ms)));
-  row.append(node('td', 'numeric muted-value', formatBytes(call.request_bytes)), node('td', 'numeric muted-value', formatBytes(call.response_bytes)));
-  return row;
-}
-
 function renderCalls() {
   if (!state.snapshot) return;
   const query = element('call-search').value;
   const tool = element('tool-filter').value;
   const status = element('status-filter').value;
-  const calls = filterCalls(state.snapshot.recent_calls, query, tool, status);
-  element('clear-filters').hidden = !(query || tool || status);
+  const source = element('source-filter').value;
+  const access = element('capability-filter').value;
+  const calls = filterCalls(state.snapshot.recent_calls, query, tool, status, source, access);
+  const filtered = Boolean(query || tool || status || source || access);
+  element('clear-filters').hidden = !filtered;
   setText('filtered-count', `${number(calls.length)} calls`);
-  if (calls.length) element('call-rows').replaceChildren(...calls.map(callRow));
-  else renderCallEmpty(Boolean(query || tool || status));
+  renderRecentCalls(calls, filtered);
   for (const button of element('tool-rows').querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
-}
-
-function renderCallEmpty(filtered) {
-  const title = filtered ? 'No matching calls' : 'Quiet for now';
-  const description = filtered ? 'Try a different tool, outcome or search term.' : 'Run an MCP tool from ChatGPT. Its usage metadata will appear here.';
-  element('call-rows').replaceChildren(emptyRow(6, title, description));
 }
 
 function renderSnapshot(snapshot) {
@@ -217,9 +156,21 @@ function renderSnapshot(snapshot) {
   renderTools(snapshot.tools);
   renderCalls();
   renderStorage(snapshot);
+  renderOrigins(snapshot);
+  renderSecurityWindow(snapshot.recent_calls);
+  renderClock();
   setText('nav-count', number(snapshot.summary.total_calls));
   setText('call-retention', `UP TO ${number(snapshot.retention.recent_call_limit)} RECENT CALLS`);
   setText('last-updated', `Last snapshot · ${clock(Date.now())}`);
+}
+
+function clockAdvancing() { return clockCanAdvance(state); }
+
+function renderClock() {
+  if (!state.snapshot || !state.clock) return;
+  state.clock = tickClock(state.clock, performance.now(), clockAdvancing());
+  setText('server-uptime', formatUptime(state.clock.displayed_uptime_ms));
+  renderInFlight(state.snapshot, state.clock, clockAdvancing());
 }
 
 function renderStorage(snapshot) {
@@ -244,6 +195,7 @@ function validSnapshot(snapshot) {
 
 async function refresh() {
   if (state.loading) return;
+  const generation = state.refreshGeneration;
   state.loading = true;
   element('refresh-button').disabled = true;
   try {
@@ -251,12 +203,17 @@ async function refresh() {
     if (!response.ok) throw new Error('Snapshot unavailable');
     const snapshot = await response.json();
     if (!validSnapshot(snapshot)) throw new Error('Invalid snapshot');
+    const now = performance.now();
+    state.clock = createClock(snapshot, now, tickClock(state.clock, now, clockAdvancing()));
+    state.clockReady = !state.paused;
+    state.clockGeneration = generation;
     state.snapshot = snapshot;
     state.connected = true;
     renderSnapshot(snapshot);
     notice(state.paused ? 'Automatic refresh is paused. Select Resume to follow new activity.' : '');
   } catch {
     state.connected = false;
+    state.clockReady = false;
     element('connection-badge').className = 'connection-badge disconnected';
     notice(state.snapshot ? 'Connection lost. Showing the last snapshot; reconnecting automatically while refresh is enabled.' : 'The observer is unavailable. Check that the MCP server is running; this dashboard will retry automatically.', true);
   } finally { finishRefresh(); }
@@ -275,7 +232,10 @@ function finishRefresh() {
 }
 
 function togglePause() {
+  state.clock = tickClock(state.clock, performance.now(), clockAdvancing());
   state.paused = !state.paused;
+  state.clockReady = false;
+  state.refreshGeneration += 1;
   clearTimeout(state.timer);
   connectionState();
   if (state.paused) notice('Automatic refresh is paused. Select Resume to follow new activity.');
@@ -293,6 +253,8 @@ function clearFilters() {
   element('call-search').value = '';
   element('tool-filter').value = '';
   element('status-filter').value = '';
+  element('source-filter').value = '';
+  element('capability-filter').value = '';
   renderCalls();
   element('call-search').focus();
 }
@@ -319,7 +281,10 @@ function start() {
   element('call-search').addEventListener('input', renderCalls);
   element('tool-filter').addEventListener('change', renderCalls);
   element('status-filter').addEventListener('change', renderCalls);
+  element('source-filter').addEventListener('change', renderCalls);
+  element('capability-filter').addEventListener('change', renderCalls);
   bindNavigation();
+  setInterval(renderClock, 1000);
   refresh();
 }
 

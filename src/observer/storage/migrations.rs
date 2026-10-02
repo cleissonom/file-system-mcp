@@ -16,6 +16,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/0002_indexes.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/0003_origin.sql"),
+    },
 ];
 
 pub(super) fn apply(connection: &mut Connection, migrations: &[Migration]) -> io::Result<()> {

@@ -16,7 +16,7 @@ fn pending_migration_upgrades_version_one_without_replacing_data() {
     drop(connection);
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     let store = Store::open(&path).unwrap();
-    assert_eq!(store.schema_version(), 2);
+    assert_eq!(store.schema_version(), SCHEMA_VERSION);
     assert_eq!(store.load(101).unwrap().recent_calls[0].sequence, 51);
     let connection = Connection::open(&path).unwrap();
     let indexes: u32 = connection.query_row("SELECT COUNT(*) FROM sqlite_schema WHERE type = 'index' AND name LIKE 'completed_calls_%_idx'", [], |row| row.get(0)).unwrap();
@@ -47,7 +47,7 @@ fn failed_migration_rolls_back_ddl_and_version_and_can_resume() {
     let version: u32 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, SCHEMA_VERSION);
 }
 
 #[test]

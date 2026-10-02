@@ -5,6 +5,19 @@ use std::fs;
 use support::McpClient;
 
 #[test]
+fn test_mcp_cli_version_matches_package() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_file-system-mcp"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("file-system-mcp {}\n", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
 fn test_mcp_cli_custom_plans_and_patches_dirs() {
     let temp_dir = tempfile::tempdir().unwrap();
     let temp = temp_dir.path();

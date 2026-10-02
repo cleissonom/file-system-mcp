@@ -19,8 +19,11 @@ The workspace must already exist and be a directory. The server supports macOS a
 | Enable observer | `--dashboard` | — | Disabled |
 | Observer port | `--dashboard-port <PORT>` with `--dashboard` | — | `9411` |
 | Observer SQLite file | `--dashboard-db <PATH>` with `--dashboard` | `MCP_OBSERVER_DB` | Project `.data/observer.sqlite3` |
+| Observer source label | `--observer-source <SOURCE>` with `--dashboard` | `MCP_OBSERVER_SOURCE` | `unknown` |
 
 CLI paths take precedence over environment variables; within each alias pair the first listed environment variable takes precedence. Startup paths support leading tilde expansion. Plain stdio startup does **not** load `.env`, and its port comes from the flag/default, not `MCP_DASHBOARD_PORT`.
+
+The source label accepts `unknown`, `chatgpt`, `chatgpt_work`, `codex`, `codex_cloud`, or `openai_dot`. CLI overrides shell for direct startup. These labels describe configured attribution, not authenticated caller identity; see [origin evidence](OBSERVER.md#source-labels-and-server-runs) for optional per-call tags and their limits.
 
 An explicit root enables mutations. When no nonempty root setting is supplied, discovery remains read-only, including plan and patch-file writes. Discovery chooses the parent when started from a directory named `file-system-mcp`, then considers a parent's `AGENTS.md`, the current directory's `AGENTS.md`, and finally the parent/current directory fallback. Use an explicit root to make deployment behavior predictable and inspect it with `workspace_info`.
 
@@ -64,9 +67,10 @@ The configuration file must exist even when required settings are supplied by th
 |---|---|---|---|
 | Port | `tunnel --dashboard-port <PORT>` | `MCP_DASHBOARD_PORT` | `9411` |
 | SQLite file | `tunnel --dashboard-db <PATH>` | `MCP_OBSERVER_DB` | Project `.data/observer.sqlite3` |
+| Source label | `tunnel --observer-source <SOURCE>` | `MCP_OBSERVER_SOURCE` | `unknown` |
 | Disable observer | `tunnel --no-dashboard` | — | Enabled |
 
-CLI settings take precedence. Port `0` selects a free port and prints the URL to stderr. `--no-dashboard` cannot be combined with observer port/database flags and avoids opening telemetry storage. Relative environment/file database paths resolve against the `.env` directory; relative CLI database paths resolve against the launch directory.
+CLI settings take precedence. Source labels use CLI over shell over `.env`, with the same fixed values as direct startup. Port `0` selects a free port and prints the URL to stderr. `--no-dashboard` cannot be combined with observer port/database/source flags and avoids opening telemetry storage. Relative environment/file database paths resolve against the `.env` directory; relative CLI database paths resolve against the launch directory. Each observer covers one process and its database; concurrent servers need separate database paths and ports.
 
 ### Tunnel client's health/admin UI
 

@@ -1,5 +1,40 @@
+use crate::observer::origin::{Context, Source, Transport};
 use std::io;
 use std::path::{Component, Path, PathBuf};
+
+pub fn parse_source(value: &str) -> io::Result<Source> {
+    Source::parse(value).ok_or_else(|| invalid(
+        "MCP_OBSERVER_SOURCE / --observer-source must be unknown, chatgpt, chatgpt_work, codex, codex_cloud, or openai_dot",
+    ))
+}
+
+pub fn origin_context(cli_source: Option<&str>) -> io::Result<Context> {
+    let transport = if std::env::var_os("FILE_SYSTEM_MCP_TUNNEL_LAUNCH").as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        Transport::Tunnel
+    } else {
+        Transport::Stdio
+    };
+    Ok(Context {
+        source: configured_source(cli_source)?,
+        transport,
+    })
+}
+
+fn configured_source(cli_source: Option<&str>) -> io::Result<Source> {
+    if let Some(value) = cli_source {
+        return parse_source(value);
+    }
+    let Some(value) = std::env::var_os("MCP_OBSERVER_SOURCE") else {
+        return Ok(Source::Unknown);
+    };
+    parse_source(
+        value
+            .to_str()
+            .ok_or_else(|| invalid("MCP_OBSERVER_SOURCE must be valid UTF-8"))?,
+    )
+}
 
 pub fn database_path(cli: Option<PathBuf>, workspace: &Path) -> io::Result<PathBuf> {
     let path = cli

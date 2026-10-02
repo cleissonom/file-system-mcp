@@ -22,6 +22,15 @@ impl Client {
     }
 
     fn start_db(root: &std::path::Path, database: &std::path::Path) -> Self {
+        Self::start_db_config(root, database, &[], &[])
+    }
+
+    fn start_db_config(
+        root: &std::path::Path,
+        database: &std::path::Path,
+        extra: &[&str],
+        environment: &[(&str, &str)],
+    ) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_file-system-mcp"))
             .args([
                 "--root",
@@ -32,6 +41,10 @@ impl Client {
                 "--dashboard-db",
                 database.to_str().unwrap(),
             ])
+            .args(extra)
+            .env_remove("MCP_OBSERVER_SOURCE")
+            .env_remove("FILE_SYSTEM_MCP_TUNNEL_LAUNCH")
+            .envs(environment.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -55,7 +68,12 @@ impl Client {
     }
 
     fn call(&mut self, params: Value) -> Value {
-        let request = json!({"jsonrpc":"2.0","id":"private-request-id","method":"tools/call","params":params});
+        self.request("tools/call", params)
+    }
+
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        let request =
+            json!({"jsonrpc":"2.0","id":"private-request-id","method":method,"params":params});
         writeln!(self.child.stdin.as_mut().unwrap(), "{request}").unwrap();
         self.child.stdin.as_mut().unwrap().flush().unwrap();
         let mut response = String::new();
@@ -81,6 +99,100 @@ impl Client {
         assert!(response.starts_with("HTTP/1.1 200"));
         serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
     }
+}
+
+#[test]
+fn per_call_origins_are_private_and_survive_restarts_without_caching_initialize() {
+    let root = tempfile::tempdir().unwrap();
+    let volume = tempfile::tempdir().unwrap();
+    let database = volume.path().join("observer.sqlite3");
+    let mut client = Client::start_db(root.path(), &database);
+    client.call(json!({"name":"workspace_info","arguments":{},"_meta": {
+        "file-system-mcp/source":"codex_cloud","openai/session":"private-conversation",
+        "openai/userAgent":"private-device","openai/subject":"private-person"
+    }}));
+    client.request(
+        "initialize",
+        json!({"clientInfo":{"name":"chatgpt","version":"private-version"}}),
+    );
+    client.call(json!({"name":"workspace_info","arguments":{}}));
+    let snapshot = client.snapshot();
+    assert_eq!(
+        snapshot["recent_calls"][1]["origin"]["source"],
+        "codex_cloud"
+    );
+    assert_eq!(
+        snapshot["recent_calls"][1]["origin"]["attribution"],
+        "client_reported"
+    );
+    assert_eq!(snapshot["recent_calls"][1]["origin"]["transport"], "stdio");
+    assert_eq!(snapshot["recent_calls"][0]["origin"]["source"], "unknown");
+    assert_eq!(snapshot["recent_calls"][1]["capability"], "read");
+    assert_eq!(snapshot["recent_calls"][1]["session_id"], 1);
+    assert!(!snapshot.to_string().contains("private-"));
+    client.stop();
+    let restarted = Client::start_db(root.path(), &database);
+    let snapshot = restarted.snapshot();
+    assert_eq!(snapshot["server"]["session_id"], 2);
+    assert_eq!(
+        snapshot["recent_calls"][1]["origin"]["source"],
+        "codex_cloud"
+    );
+    assert_eq!(snapshot["recent_calls"][1]["session_id"], 1);
+    assert!(!snapshot.to_string().contains("private-"));
+}
+
+#[test]
+fn configured_source_precedence_does_not_mask_invalid_per_call_tags() {
+    let root = tempfile::tempdir().unwrap();
+    let volume = tempfile::tempdir().unwrap();
+    let mut client = Client::start_db_config(
+        root.path(),
+        &volume.path().join("observer.sqlite3"),
+        &["--observer-source", "chatgpt_work"],
+        &[("MCP_OBSERVER_SOURCE", "openai_dot")],
+    );
+    client.call(json!({"name":"workspace_info","arguments":{}}));
+    client.call(json!({"name":"workspace_info","arguments":{},"_meta":{"file-system-mcp/source":"codex_cloud"}}));
+    client.call(json!({"name":"workspace_info","arguments":{},"_meta":{"file-system-mcp/source":"private-sentinel"}}));
+    let snapshot = client.snapshot();
+    assert_eq!(
+        snapshot["recent_calls"][2]["origin"]["source"],
+        "chatgpt_work"
+    );
+    assert_eq!(
+        snapshot["recent_calls"][2]["origin"]["attribution"],
+        "operator_configured"
+    );
+    assert_eq!(
+        snapshot["recent_calls"][1]["origin"]["source"],
+        "codex_cloud"
+    );
+    assert_eq!(snapshot["recent_calls"][0]["origin"]["source"], "unknown");
+    assert!(!snapshot.to_string().contains("private-sentinel"));
+}
+
+#[test]
+fn invalid_source_configuration_fails_without_echoing_values_or_creating_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let volume = tempfile::tempdir().unwrap();
+    let database = volume.path().join("observer.sqlite3");
+    let output = Command::new(env!("CARGO_BIN_EXE_file-system-mcp"))
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--dashboard",
+            "--dashboard-port",
+            "0",
+            "--dashboard-db",
+            database.to_str().unwrap(),
+        ])
+        .env("MCP_OBSERVER_SOURCE", "private-configuration-sentinel")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("private-configuration-sentinel"));
+    assert!(!database.exists());
 }
 
 impl Drop for Client {

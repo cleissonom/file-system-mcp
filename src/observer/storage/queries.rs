@@ -1,4 +1,7 @@
-use super::{Aggregate, CallRecord, History, MinuteAggregate, Outcome, ToolAggregate, sql_error};
+use super::{
+    Aggregate, CallRecord, History, MinuteAggregate, Origin, OriginAggregate, Outcome,
+    ToolAggregate, sql_error,
+};
 use rusqlite::{Connection, Row, params};
 use std::collections::BTreeMap;
 use std::io;
@@ -7,24 +10,29 @@ use std::sync::OnceLock;
 pub(super) fn append(connection: &Connection, record: &CallRecord) -> io::Result<()> {
     validate(record)?;
     connection.execute(
-        "INSERT INTO completed_calls (sequence, started_at_ms, completed_at_ms, tool, outcome, duration_ms, request_bytes, response_bytes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO completed_calls (sequence, started_at_ms, completed_at_ms, tool, outcome, duration_ms, request_bytes, response_bytes, source, evidence, transport, session_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![record.sequence as i64, record.started_at_ms as i64, record.completed_at_ms as i64,
             normalize_tool(&record.tool), outcome_name(record.outcome), record.duration_ms,
-            record.request_bytes as i64, record.response_bytes as i64],
+            record.request_bytes as i64, record.response_bytes as i64,
+            record.origin.source.as_str(), record.origin.attribution.as_str(), record.origin.transport.as_str(),
+            record.session_id as i64],
     ).map_err(sql_error)?;
     Ok(())
 }
 
 pub(super) fn load(connection: &Connection, now_ms: u64) -> io::Result<History> {
     let transaction = connection.unchecked_transaction().map_err(sql_error)?;
-    let (totals, request_bytes, response_bytes, last_sequence) = totals(&transaction)?;
+    let (totals, request_bytes, response_bytes, last_sequence, last_session_id) =
+        totals(&transaction)?;
     let history = History {
         totals,
         request_bytes,
         response_bytes,
         last_sequence,
+        last_session_id,
         tools: tools(&transaction)?,
+        origins: origins(&transaction)?,
         recent_calls: recent_calls(&transaction)?,
         minutes: minutes(&transaction, now_ms)?,
     };
@@ -39,6 +47,7 @@ fn validate(record: &CallRecord) -> io::Result<()> {
         record.completed_at_ms,
         record.request_bytes,
         record.response_bytes,
+        record.session_id,
     ];
     if record.sequence == 0
         || numbers.iter().any(|value| *value > i64::MAX as u64)
@@ -53,12 +62,12 @@ fn validate(record: &CallRecord) -> io::Result<()> {
     Ok(())
 }
 
-fn totals(connection: &Connection) -> io::Result<(Aggregate, u64, u64, u64)> {
+fn totals(connection: &Connection) -> io::Result<(Aggregate, u64, u64, u64, u64)> {
     connection.query_row(
         "SELECT COUNT(*), COALESCE(SUM(outcome = 'success'), 0), COALESCE(SUM(outcome != 'success'), 0),
          COALESCE(SUM(duration_ms), 0), COALESCE(SUM(request_bytes), 0), COALESCE(SUM(response_bytes), 0),
-         COALESCE(MAX(sequence), 0) FROM completed_calls",
-        [], |row| Ok((aggregate(row, 0)?, counter(row, 4)?, counter(row, 5)?, counter(row, 6)?)),
+         COALESCE(MAX(sequence), 0), COALESCE(MAX(session_id), 0) FROM completed_calls",
+        [], |row| Ok((aggregate(row, 0)?, counter(row, 4)?, counter(row, 5)?, counter(row, 6)?, counter(row, 7)?)),
     ).map_err(sql_error)
 }
 
@@ -90,16 +99,46 @@ fn merge_tool(tools: &mut BTreeMap<String, ToolAggregate>, incoming: ToolAggrega
             totals: Aggregate::default(),
             last_called_at_ms: 0,
         });
-    tool.totals.calls += incoming.totals.calls;
-    tool.totals.successes += incoming.totals.successes;
-    tool.totals.errors += incoming.totals.errors;
-    tool.totals.duration_ms += incoming.totals.duration_ms;
+    merge_totals(&mut tool.totals, &incoming.totals);
     tool.last_called_at_ms = tool.last_called_at_ms.max(incoming.last_called_at_ms);
+}
+
+fn origins(connection: &Connection) -> io::Result<Vec<OriginAggregate>> {
+    let mut statement = connection.prepare(
+        "SELECT source, evidence, transport, COUNT(*), SUM(outcome = 'success'), SUM(outcome != 'success'), SUM(duration_ms)
+         FROM completed_calls GROUP BY source, evidence, transport ORDER BY source, evidence, transport").map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(OriginAggregate {
+                origin: origin(row, 0)?,
+                totals: aggregate(row, 3)?,
+            })
+        })
+        .map_err(sql_error)?;
+    let mut normalized = BTreeMap::<Origin, Aggregate>::new();
+    for row in rows {
+        let incoming = row.map_err(sql_error)?;
+        merge_totals(
+            normalized.entry(incoming.origin).or_default(),
+            &incoming.totals,
+        );
+    }
+    Ok(normalized
+        .into_iter()
+        .map(|(origin, totals)| OriginAggregate { origin, totals })
+        .collect())
+}
+
+fn merge_totals(totals: &mut Aggregate, incoming: &Aggregate) {
+    totals.calls += incoming.calls;
+    totals.successes += incoming.successes;
+    totals.errors += incoming.errors;
+    totals.duration_ms += incoming.duration_ms;
 }
 
 fn recent_calls(connection: &Connection) -> io::Result<Vec<CallRecord>> {
     let mut statement = connection.prepare(
-        "SELECT sequence, started_at_ms, completed_at_ms, tool, outcome, duration_ms, request_bytes, response_bytes
+        "SELECT sequence, started_at_ms, completed_at_ms, tool, outcome, duration_ms, request_bytes, response_bytes, source, evidence, transport, session_id
          FROM completed_calls ORDER BY id DESC LIMIT 1000").map_err(sql_error)?;
     let rows = statement.query_map([], call_record).map_err(sql_error)?;
     let mut calls = rows
@@ -126,7 +165,17 @@ fn call_record(row: &Row<'_>) -> rusqlite::Result<CallRecord> {
         duration_ms: row.get(5)?,
         request_bytes: counter(row, 6)?,
         response_bytes: counter(row, 7)?,
+        origin: origin(row, 8)?,
+        session_id: counter(row, 11)?,
     })
+}
+
+fn origin(row: &Row<'_>, offset: usize) -> rusqlite::Result<Origin> {
+    Ok(Origin::from_storage(
+        &row.get::<_, String>(offset)?,
+        &row.get::<_, String>(offset + 1)?,
+        &row.get::<_, String>(offset + 2)?,
+    ))
 }
 
 fn minutes(connection: &Connection, now_ms: u64) -> io::Result<Vec<MinuteAggregate>> {

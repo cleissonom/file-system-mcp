@@ -20,7 +20,9 @@
     <div class="nav-label">WORKSPACE TELEMETRY</div>
     <nav>
       <a class="nav-link active" href="#overview" aria-current="location"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h5v5H3zm9 0h5v5h-5zM3 12h5v5H3zm9 0h5v5h-5z"/></svg>Overview</a>
+      <a class="nav-link" href="#inflight"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg>In flight</a>
       <a class="nav-link" href="#traffic"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 11h4l2-6 4 11 2-6h4"/></svg>Activity</a>
+      <a class="nav-link" href="#origins"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="5" r="2"/><circle cx="5" cy="15" r="2"/><circle cx="15" cy="15" r="2"/><path d="M10 7v3m-5 3v-3h10v3"/></svg>Origins</a>
       <a class="nav-link" href="#tools"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4-5 6 5 6m6-12 5 6-5 6M11 3 9 17"/></svg>Tools</a>
       <a class="nav-link" href="#calls"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4h10M7 10h10M7 16h10M3 4h.1M3 10h.1M3 16h.1"/></svg>Call stream<span id="nav-count" class="nav-count">—</span></a>
     </nav>
@@ -46,7 +48,7 @@
       <section id="overview" class="overview" aria-labelledby="overview-heading">
         <div class="page-heading">
           <div><div class="eyebrow"><span aria-hidden="true"></span> YOUR LOCAL MCP, IN VIEW</div><h1 id="overview-heading">Workspace activity<span class="heading-dot">.</span></h1><p>Every tool call. One clear picture.</p><p id="storage-info" class="storage-info">Checking history storage</p></div>
-          <div class="session-meta"><div><span class="meta-label">SERVER</span><span id="server-name">file-system-mcp</span></div><div><span class="meta-label">UPTIME</span><span id="server-uptime">—</span><span class="meta-divider">/</span><span class="meta-label">PID</span><span id="server-pid">—</span></div></div>
+          <div class="session-meta"><div><span class="meta-label">SERVER</span><span id="server-name">file-system-mcp</span></div><div><span class="meta-label">UPTIME</span><span id="server-uptime">—</span><span class="meta-divider">/</span><span class="meta-label">PID</span><span id="server-pid">—</span></div><div id="process-session">Run unavailable</div></div>
         </div>
         <div id="connection-notice" class="connection-notice" role="status" aria-live="polite">Connecting to the observer. Usage metrics will appear here.</div>
         <div id="storage-notice" class="connection-notice error" role="status" aria-live="polite" hidden></div>
@@ -57,6 +59,12 @@
           <article class="metric"><div class="metric-label">RECENT P95 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16h14M4 12l4-4 4 2 5-6"/></svg></div><div id="p95-duration" class="metric-value">—</div><div id="p95-foot" class="metric-foot">Retained calls only</div></article>
           <article class="metric metric-active"><div class="metric-label">IN FLIGHT <span class="activity-indicator" aria-hidden="true"></span></div><div id="active-count" class="metric-value">—</div><div id="active-foot" class="metric-foot">Currently executing</div></article>
         </div>
+      </section>
+
+      <section id="inflight" class="panel inflight-panel" aria-labelledby="inflight-heading">
+        <div class="panel-heading"><div><div class="section-kicker">EXECUTING NOW</div><h2 id="inflight-heading">In-flight requests</h2></div><div class="inflight-summary"><span id="inflight-oldest">Awaiting connection</span><span id="inflight-count" class="active-badge">— ACTIVE</span></div></div>
+        <div class="table-scroll active-scroll" tabindex="0" role="region" aria-label="Scrollable in-flight requests table"><table><caption class="sr-only">All requests currently executing, with elapsed time, capability and available origin evidence.</caption><thead><tr><th scope="col">TOOL / CALL</th><th scope="col">CAPABILITY</th><th scope="col">ORIGIN / EVIDENCE</th><th scope="col">SERVER RUN</th><th scope="col" class="numeric">ELAPSED</th><th scope="col" class="numeric">REQUEST</th></tr></thead><tbody id="inflight-rows"><tr><td colspan="6" class="table-empty">Active requests will appear when the observer connects.</td></tr></tbody></table></div>
+        <div class="panel-note inflight-note"><span id="inflight-status">Waiting for a current snapshot</span><span>All active requests · metadata only</span></div>
       </section>
 
       <section id="traffic" class="traffic-grid" aria-labelledby="traffic-heading">
@@ -72,20 +80,34 @@
           <div class="outcome-chart"><svg viewBox="0 0 160 160" role="img" aria-labelledby="outcome-title"><title id="outcome-title">Awaiting completed tool calls</title><circle class="outcome-track" cx="80" cy="80" r="63"/><circle id="outcome-errors" class="outcome-errors" cx="80" cy="80" r="63" stroke-dasharray="0 396" transform="rotate(-90 80 80)"/></svg><div class="outcome-center"><strong id="outcome-total">—</strong><span>COMPLETED</span></div></div>
           <div class="outcome-row"><span><i class="outcome-dot" aria-hidden="true"></i>Successful</span><strong id="outcome-successes">—</strong></div>
           <div class="outcome-row"><span><i class="outcome-dot error" aria-hidden="true"></i>Failed</span><strong id="outcome-failures">—</strong></div>
-          <div class="active-detail"><span class="meta-label">EXECUTING NOW</span><div id="active-tools">Awaiting connection</div></div>
+          <div class="active-detail"><span class="meta-label">CURRENT PROCESS</span><div id="health-session">Awaiting connection</div></div>
+        </article>
+      </section>
+
+      <section id="origins" class="inspection-grid" aria-labelledby="origins-heading">
+        <article class="panel origins-panel">
+          <div class="panel-heading"><div><div class="section-kicker">02 / CONNECTION CONTEXT</div><h2 id="origins-heading">Where activity is attributed</h2></div><span id="origin-scope" class="period-label">AWAITING SNAPSHOT</span></div>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable origin breakdown"><table><caption class="sr-only">Calls grouped by source label, attribution evidence and transport. Labels do not authenticate a person.</caption><thead><tr><th scope="col">ORIGIN / EVIDENCE</th><th scope="col">TRANSPORT</th><th scope="col" class="numeric">CALLS</th><th scope="col" class="numeric">FAILED</th><th scope="col" class="numeric">ACTIVE</th></tr></thead><tbody id="origin-rows"><tr><td colspan="5" class="table-empty">Origin metadata will appear when the observer connects.</td></tr></tbody></table></div>
+          <div class="panel-note">Client reports are unverified. Operator labels describe the connection; neither authenticates a person.</div>
+        </article>
+        <article class="panel security-panel" aria-labelledby="security-heading">
+          <div class="panel-heading"><div><div class="section-kicker">RETAINED WINDOW</div><h2 id="security-heading">Recent activity checks</h2></div></div>
+          <p id="security-window" class="security-window">Awaiting completed calls</p>
+          <dl class="security-stats"><div><dt>Write-capable calls</dt><dd id="security-writes">—</dd></div><div><dt>Failed calls</dt><dd id="security-errors">—</dd></div><div><dt>Origin unavailable</dt><dd id="security-unknown">—</dd></div></dl>
+          <p class="security-note">Capability describes what a tool can do. It does not prove that a request changed files.</p>
         </article>
       </section>
 
       <section id="tools" class="panel tool-panel" aria-labelledby="tools-heading">
-        <div class="panel-heading"><div><div class="section-kicker">02 / TOOL PERFORMANCE</div><h2 id="tools-heading">The tools behind the activity</h2></div><span id="tool-count" class="period-label">— TOOLS</span></div>
+        <div class="panel-heading"><div><div class="section-kicker">03 / TOOL PERFORMANCE</div><h2 id="tools-heading">The tools behind the activity</h2></div><span id="tool-count" class="period-label">— TOOLS</span></div>
         <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable tool performance table"><table class="tool-table"><caption id="tool-caption" class="sr-only">Tool usage and performance. Select a tool to filter the call stream.</caption><thead><tr><th scope="col">TOOL</th><th scope="col">ACCESS</th><th scope="col" class="numeric">CALLS</th><th scope="col" class="numeric">SUCCESS</th><th scope="col" class="numeric">ERRORS</th><th scope="col" class="numeric">AVG. LATENCY</th><th scope="col">LAST CALLED</th></tr></thead><tbody id="tool-rows"><tr><td colspan="7" class="table-empty">Tool performance will appear when the observer connects.</td></tr></tbody></table></div>
         <div class="panel-note"><span aria-hidden="true">↳</span> Select a tool name to explore its recent calls.</div>
       </section>
 
       <section id="calls" class="panel calls-panel" aria-labelledby="calls-heading">
-        <div class="panel-heading"><div><div class="section-kicker">03 / CALL STREAM</div><h2 id="calls-heading">Recent calls</h2></div><span id="call-retention" class="period-label">MOST RECENT FIRST</span></div>
-        <div class="filter-bar"><label class="search-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="m12 12 5 5"/></svg><span class="sr-only">Search tool names or outcomes</span><input id="call-search" type="search" placeholder="Search calls…" autocomplete="off"></label><label class="select-control"><span class="sr-only">Filter by tool</span><select id="tool-filter"><option value="">All tools</option></select></label><label class="select-control"><span class="sr-only">Filter by outcome</span><select id="status-filter"><option value="">All outcomes</option><option value="success">Successful</option><option value="error">Failed</option><option value="tool_error">Tool errors</option><option value="protocol_error">Protocol errors</option></select></label><button id="clear-filters" class="text-button" type="button" hidden>Clear filters</button><span id="filtered-count" class="filtered-count">— calls</span></div>
-        <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable recent calls table"><table class="call-table"><caption class="sr-only">Recent completed MCP calls with outcome, latency and byte counts. Arguments and results are never displayed.</caption><thead><tr><th scope="col">OUTCOME</th><th scope="col">TOOL / CALL</th><th scope="col">STARTED</th><th scope="col" class="numeric">DURATION</th><th scope="col" class="numeric">REQUEST</th><th scope="col" class="numeric">RESPONSE</th></tr></thead><tbody id="call-rows"><tr><td colspan="6" class="table-empty">Waiting for the observer to connect.</td></tr></tbody></table></div>
+        <div class="panel-heading"><div><div class="section-kicker">04 / CALL STREAM</div><h2 id="calls-heading">Recent calls</h2></div><span id="call-retention" class="period-label">MOST RECENT FIRST</span></div>
+        <div class="filter-bar"><label class="search-control"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="m12 12 5 5"/></svg><span class="sr-only">Search tools, outcomes, sources or sessions</span><input id="call-search" type="search" placeholder="Search calls…" autocomplete="off"></label><label class="select-control"><span class="sr-only">Filter by tool</span><select id="tool-filter"><option value="">All tools</option></select></label><label class="select-control"><span class="sr-only">Filter by outcome</span><select id="status-filter"><option value="">All outcomes</option><option value="success">Successful</option><option value="error">Failed</option><option value="tool_error">Tool errors</option><option value="protocol_error">Protocol errors</option></select></label><label class="select-control"><span class="sr-only">Filter by source label</span><select id="source-filter"><option value="">All sources</option><option value="chatgpt">ChatGPT</option><option value="chatgpt_work">ChatGPT Work</option><option value="codex">Codex</option><option value="codex_cloud">Codex Cloud</option><option value="openai_dot">OpenAI Dot</option><option value="unknown">Origin unavailable</option></select></label><label class="select-control"><span class="sr-only">Filter by tool capability</span><select id="capability-filter"><option value="">All capabilities</option><option value="read">Read only</option><option value="write">Write capable</option><option value="unknown">Unknown capability</option></select></label><button id="clear-filters" class="text-button" type="button" hidden>Clear filters</button><span id="filtered-count" class="filtered-count">— calls</span></div>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable recent calls table"><table class="call-table"><caption class="sr-only">Recent completed MCP calls with capability, origin evidence, anonymous server run, latency and byte counts. Arguments and results are never displayed.</caption><thead><tr><th scope="col">OUTCOME</th><th scope="col">TOOL / CALL</th><th scope="col">CAPABILITY</th><th scope="col">ORIGIN / EVIDENCE</th><th scope="col">SERVER RUN</th><th scope="col">STARTED</th><th scope="col" class="numeric">DURATION</th><th scope="col" class="numeric">REQUEST</th><th scope="col" class="numeric">RESPONSE</th></tr></thead><tbody id="call-rows"><tr><td colspan="9" class="table-empty">Waiting for the observer to connect.</td></tr></tbody></table></div>
         <div class="panel-note call-note"><span id="call-note">Recent completed calls will appear when the observer connects.</span><span class="privacy-label"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>No payloads recorded</span></div>
       </section>
       <footer class="page-footer"><span>MCP Observer <span aria-hidden="true">/</span> Local workspace telemetry</span><span id="last-updated">Awaiting first snapshot</span></footer>

@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "file-system-mcp")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "High-performance, secure MCP file system server for multi-repo workspaces")]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
@@ -53,6 +53,10 @@ pub struct Cli {
     /// Observer SQLite file (defaults to project .data/observer.sqlite3)
     #[arg(long, requires = "dashboard")]
     pub dashboard_db: Option<PathBuf>,
+
+    /// Observer connection label; reported per-call tags take precedence
+    #[arg(long, requires = "dashboard", value_name = "SOURCE")]
+    pub observer_source: Option<String>,
 }
 
 pub fn determine_root_dir(cli_root: Option<PathBuf>) -> io::Result<PathBuf> {
@@ -144,7 +148,7 @@ fn process_request(config: &tools::ServerConfig, req: JsonRpcRequest) -> Option<
                 capabilities: ServerCapabilities { tools: json!({}) },
                 server_info: ServerInfo {
                     name: "file-system-mcp",
-                    version: "0.1.0",
+                    version: env!("CARGO_PKG_VERSION"),
                 },
             };
             Some(JsonRpcResponse::success(
@@ -209,6 +213,11 @@ fn main() -> io::Result<()> {
     if let Some(mode) = cli.command.take() {
         return tunnel::launch(mode);
     }
+    let observer_context = if cli.dashboard {
+        observer_config::origin_context(cli.observer_source.as_deref())?
+    } else {
+        observer::origin::Context::default()
+    };
     let dashboard_options = (
         cli.dashboard,
         cli.dashboard_port.unwrap_or(9411),
@@ -243,9 +252,13 @@ fn main() -> io::Result<()> {
         }
 
         let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(req) => {
-                instrumentation::process(&config, observer.as_deref(), req, trimmed.len() as u64)
-            }
+            Ok(req) => instrumentation::process(
+                &config,
+                observer.as_deref(),
+                req,
+                trimmed.len() as u64,
+                observer_context,
+            ),
             Err(e) => Some(JsonRpcResponse::error(
                 None,
                 -32700,
@@ -305,6 +318,7 @@ mod tests {
         let val = resp.result.unwrap();
         assert_eq!(val["protocolVersion"], "2024-11-05");
         assert_eq!(val["serverInfo"]["name"], "file-system-mcp");
+        assert_eq!(val["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
@@ -380,6 +394,7 @@ mod tests {
             dashboard: false,
             dashboard_port: None,
             dashboard_db: None,
+            observer_source: None,
             root: Some(temp_dir.path().to_path_buf()),
             plans_dir: Some(PathBuf::from("my_plans")),
             patches_dir: Some(PathBuf::from("my_patches")),

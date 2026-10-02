@@ -151,12 +151,14 @@ fn fixed_assets_have_security_headers_and_unknown_paths_are_not_served() {
         ("/styles.css", "text/css"),
         ("/app.js", "text/javascript"),
         ("/charts.js", "text/javascript"),
+        ("/activity.js", "text/javascript"),
     ] {
         let response = get(&dashboard, path).to_ascii_lowercase();
-        assert!(response.starts_with("http/1.1 200"));
+        assert!(response.starts_with("http/1.1 200"), "{path}: {response}");
         assert!(response.contains(&format!("content-type: {content_type}")));
         assert!(response.contains("content-security-policy:"));
         assert!(response.contains("x-content-type-options: nosniff"));
+        assert!(response.contains("cache-control: no-store"));
         assert!(!response.contains("access-control-allow-origin"));
     }
     assert!(get(&dashboard, "/../../.env").starts_with("HTTP/1.1 404"));

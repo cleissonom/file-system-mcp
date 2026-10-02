@@ -21,7 +21,9 @@ Keep stdout exclusively for line-delimited JSON-RPC responses. Diagnostics belon
 
 Preserve supported tool arguments, result shapes, CLI/env precedence, error behavior, and partial-operation reporting unless the request explicitly changes them. Atomicity is per file, not across a multi-file patch. Expected hashes remain optimistic conflict checks.
 
-Observer telemetry must remain metadata-only. Never persist or export arguments, result content, error messages, arbitrary tool names, filenames, workspace paths, raw request IDs, environment values, or credentials. Keep the observer on loopback with its existing HTTP boundaries and the database outside the workspace.
+Observer telemetry must remain metadata-only. Fixed typed origin enums and an anonymous server-run ID are allowed; never persist or export arguments, result content, error messages, arbitrary tool names, filenames, workspace paths, raw request IDs, raw client/identity metadata, raw environment values, or credentials. Origin labels are unverified and must not authorize operations or be inferred from `clientInfo`, user-agent, or session hints. `session_id` means server run, not conversation/user. Keep the observer on loopback with its existing HTTP boundaries and the database outside the workspace.
+
+Preserve source precedence (direct CLI over shell; tunnel CLI over shell over `.env`) and per-call tag rules: a present malformed tag becomes unknown; only an absent tag uses configured attribution. Keep security counters scoped to the retained recent window and origin totals to saved history. All-active views and clocks must freeze when paused/disconnected until a fresh snapshot succeeds. Read/write catalog capability does not prove mutation.
 
 Append numbered SQL files under `src/observer/storage/migrations/` and register the next sequential version in `migrations.rs`. Keep applied migrations immutable. Migration SQL and version updates must remain transactional, idempotent on reopening, and covered for rollback and newer-schema rejection.
 
@@ -40,6 +42,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --release --locked
 node --check observer-ui/app.js
 node --check observer-ui/charts.js
+node --check observer-ui/activity.js
+node --test tests/observer_ui.test.mjs
 ```
 
 Focused observer checks:
@@ -49,6 +53,6 @@ cargo test --locked --bin file-system-mcp observer::
 cargo test --locked --test observer_integration --test tunnel_launcher
 ```
 
-For dashboard changes, verify keyboard access, narrow-screen layout, storage and connection failures, refresh, filtering, and export using disposable data. Keep new or materially changed handwritten files under 500 lines and functions focused; split by responsibility rather than by arbitrary metrics.
+For dashboard changes, verify keyboard access, narrow-screen layout, in-flight rows, origin evidence, pause/disconnect clocks, storage and connection failures, refresh, filtering, and export using disposable data. Keep new or materially changed handwritten files under 500 lines and functions focused; split by responsibility rather than by arbitrary metrics.
 
 Update affected public docs when behavior changes. In the handoff, report changed behavior, the failing regression or characterization baseline, exact commands and outcomes, and material limits. Do not claim an unrun check passed. Review changes for secrets before publishing; publication, credential use, and changes to live services need the user's explicit request.

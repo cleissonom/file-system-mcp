@@ -28,7 +28,7 @@ The process reads one JSON-RPC message per line from stdin. Startup messages go 
 
 Keep changes focused on a concrete problem and preserve existing contracts unless the proposed behavior change is explicit. Start a behavior or bug fix with a focused failing test, implement the smallest fix, then refactor and run the relevant checks. Documentation-only and mechanical changes do not need an artificial failing test.
 
-Security and persistence changes need coverage of failure paths as well as success. In particular, preserve confinement under symlinks, protected and ignored paths, stale hashes, partial operations, and metadata-only telemetry. Add sequential SQL migrations rather than editing migrations that may already have run. See [observer storage](docs/OBSERVER.md#sqlite-storage-and-migrations).
+Security and persistence changes need coverage of failure paths as well as success. In particular, preserve confinement under symlinks, protected and ignored paths, stale hashes, partial operations, and metadata-only telemetry. Origin attribution permits only fixed typed fields and anonymous server-run IDs; never retain raw client/identity metadata or infer authenticated callers from labels. Add sequential SQL migrations rather than editing migrations that may already have run. See [observer storage](docs/OBSERVER.md#sqlite-storage-and-migrations).
 
 Use `Cargo.lock` and `--locked` for reproducible dependency resolution. Make dependency changes deliberately and explain why an existing dependency or standard-library function is insufficient. Do not introduce a frontend package manager for the static observer UI.
 
@@ -43,6 +43,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --release --locked
 node --check observer-ui/app.js
 node --check observer-ui/charts.js
+node --check observer-ui/activity.js
+node --test tests/observer_ui.test.mjs
 ```
 
 For focused observer work:
@@ -52,7 +54,7 @@ cargo test --locked --bin file-system-mcp observer::
 cargo test --locked --test observer_integration --test tunnel_launcher
 ```
 
-For UI changes, also verify the dashboard with a disposable workspace and database: keyboard navigation, narrow screens, connection failure, storage warnings, filtering, refresh, and export. Do not send fixture or real credentials to a live tunnel during tests.
+For UI changes, also verify the dashboard with a disposable workspace and database: keyboard navigation, narrow screens, all in-flight rows, source/evidence and run labels, one-second clocks, pause/disconnect behavior, connection failure, storage warnings, filtering, refresh, and export. Treat write capability as a catalog property, not proof of mutation, and keep security counters limited to the retained recent window. Do not send fixture or real credentials to a live tunnel during tests.
 
 ## Submitting a pull request
 

@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible problem using synthetic data.
+title: "Bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read SECURITY.md before reporting a suspected vulnerability. Do not disclose exploits, credentials, environment values, private file contents, personal paths, or telemetry exports in a public issue. Use a disposable workspace and synthetic data.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include the server version or commit and the tunnel-client version if relevant.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system
+      description: State macOS or Linux and the version. Include filesystem type if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give minimal steps and synthetic tool calls. Use placeholder paths and credentials; never paste your real .env.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant errors only after removing private values and content.
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Checks and configuration
+      description: List relevant commands and results, CLI flags, and environment variable names only. Do not include real values, full environment dumps, or database exports.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Public report safety
+      options:
+        - label: I reviewed SECURITY.md and this report contains synthetic or sanitized data only.
+          required: true

@@ -1,0 +1,22 @@
+/target/
+# Keep credentials local; publish only the deliberately sanitized template.
+.env*
+*.env
+!.env.example
+/.data/
+# Local SQLite databases and transaction companions, including custom locations.
+*.sqlite
+*.sqlite-*
+*.sqlite.lock
+*.sqlite3
+*.sqlite3-*
+*.sqlite3.lock
+*.db
+*.db-*
+*.db.lock
+# Private keys and certificate containers.
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store

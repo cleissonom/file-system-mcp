@@ -1,0 +1,27 @@
+[package]
+name = "file-system-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93.1"
+description = "Workspace-scoped filesystem MCP server with a local SQLite-backed observer"
+license = "MIT"
+readme = "README.md"
+keywords = ["mcp", "filesystem", "workspace", "observer"]
+categories = ["development-tools", "filesystem"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ignore = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10"
+globset = "0.4"
+rustix = { version = "1.1.5", features = ["fs", "process"] }
+sha2 = "0.10"
+diffy = "0.4"
+dotenvy = "0.15.7"
+httparse = "1"
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3.10"

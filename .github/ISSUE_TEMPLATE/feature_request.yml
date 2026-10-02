@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a focused improvement to workspace tools or the observer.
+title: "Feature: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic examples. Do not include credentials, private file contents, personal workspace paths, or telemetry exports. Report suspected vulnerabilities privately according to SECURITY.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the concrete workflow that is difficult today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful improvement and a synthetic before/after example.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and constraints
+      description: Include workspace boundary, compatibility, persistence, or accessibility considerations where relevant.
